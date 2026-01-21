@@ -17,7 +17,7 @@
     button { padding: 12px 14px; border-radius: 12px; border: 1px solid #ccc; background: white; cursor: pointer; font-weight: 700; }
     button.primary { border-color: #111; }
     button.danger { border-color: #a40000; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
     .pill { display:inline-block; padding:4px 10px; border:1px solid #ddd; border-radius:999px; font-size:12px; background:#fff; }
     code { background:#f2f2f2; padding:2px 6px; border-radius:8px; }
     a { word-break: break-all; }
@@ -34,13 +34,12 @@
 <body>
 <div class="wrap">
 
-  <!-- ✅ BANDEAU -->
   <div class="banner">
     <img src="banner.jpeg" alt="Lisa vs Manon - Americano" />
   </div>
 
   <h1>🎲 Tirage au sort Americano</h1>
-  <div class="muted">Pierre ✊ / Feuille ✋ / Ciseaux ✌️ — premier à <b>5</b> gagne.</div>
+  <div class="muted">Pierre ✊ / Feuille ✋ / Ciseaux ✌️ — premier à <b>10</b> gagne.</div>
 
   <div class="card" id="setupCard">
     <div class="big">Créer / rejoindre une partie</div>
@@ -83,26 +82,39 @@
       <div class="muted" style="margin-top:8px;">Ton choix reste caché jusqu’à ce que l’autre joueur ait joué.</div>
     </div>
 
-    <div id="resultBox" style="margin-top:14px;"></div>
-
     <div class="row" style="margin-top:12px;">
       <button id="btnResume" style="display:none;">▶️ Reprendre (3 manches)</button>
       <button id="btnReset" class="danger" style="display:none;">Revanche (reset)</button>
     </div>
 
-    <!-- ✅ Fin de partie : choix du vainqueur -->
+    <!-- ✅ IMPORTANT : encart choix en haut (au-dessus du dernier résultat) -->
     <div class="card" id="winnerChoiceCard" style="display:none;">
       <div class="panelTitle">🏁 Choix du vainqueur</div>
       <div class="muted" id="winnerChoiceInfo"></div>
+
+      <div class="row" style="margin-top:10px;">
+        <button id="btnAdminValidate" class="primary" style="display:none;">✅ Admin : valider les choix</button>
+      </div>
+
       <div class="row" id="winnerChoiceButtons" style="margin-top:10px; display:none;">
         <button id="btnChooseFirstPlayer">Choix du premier joueur</button>
         <button id="btnChooseColor">Choix de la couleur</button>
       </div>
-      <div class="row" id="colorButtons" style="margin-top:10px; display:none;">
-        <button id="btnRed">Rouge</button>
-        <button id="btnYellow">Jaune</button>
+
+      <div class="row" id="colorButtonsWinner" style="margin-top:10px; display:none;">
+        <button id="btnWinnerRed">Rouge</button>
+        <button id="btnWinnerYellow">Jaune</button>
       </div>
+
+      <div class="row" id="colorButtonsLoser" style="margin-top:10px; display:none;">
+        <button id="btnLoserRed">Rouge</button>
+        <button id="btnLoserYellow">Jaune</button>
+      </div>
+
+      <div class="muted" id="finalSummary" style="margin-top:10px; display:none;"></div>
     </div>
+
+    <div id="resultBox" style="margin-top:14px;"></div>
 
     <div class="card" id="historyCard" style="display:none;">
       <div class="big">📜 Historique (partie en cours)</div>
@@ -133,11 +145,10 @@
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
 
-  // --- Helpers
   const qs = new URLSearchParams(location.search);
-  const roleParam = qs.get("role");          // admin | player1 | player2 | spectator
-  const gameIdFromUrl = qs.get("game");      // firebase push key
-  const keyFromUrl = qs.get("k");            // secret key
+  const roleParam = qs.get("role");
+  const gameIdFromUrl = qs.get("game");
+  const keyFromUrl = qs.get("k");
 
   const LABEL = { ROCK:"✊ Pierre", PAPER:"✋ Feuille", SCISSORS:"✌️ Ciseaux" };
 
@@ -171,8 +182,16 @@
     if (name === "Manon") return "player2";
     return null;
   }
+  function loserRoleFromWinnerName(name){
+    if (name === "Lisa") return "player2";
+    if (name === "Manon") return "player1";
+    return null;
+  }
+  function loserNameFromWinnerName(name){
+    return name === "Lisa" ? "Manon" : "Lisa";
+  }
 
-  // --- UI
+  // UI
   const setupCard = document.getElementById("setupCard");
   const gameCard = document.getElementById("gameCard");
   const linksBox = document.getElementById("links");
@@ -190,7 +209,6 @@
 
   const btnResume = document.getElementById("btnResume");
   const btnReset = document.getElementById("btnReset");
-
   const btnRock = document.getElementById("btnRock");
   const btnPaper = document.getElementById("btnPaper");
   const btnScissors = document.getElementById("btnScissors");
@@ -201,14 +219,23 @@
   // Winner flow UI
   const winnerChoiceCard = document.getElementById("winnerChoiceCard");
   const winnerChoiceInfo = document.getElementById("winnerChoiceInfo");
+  const btnAdminValidate = document.getElementById("btnAdminValidate");
+
   const winnerChoiceButtons = document.getElementById("winnerChoiceButtons");
-  const colorButtons = document.getElementById("colorButtons");
   const btnChooseFirstPlayer = document.getElementById("btnChooseFirstPlayer");
   const btnChooseColor = document.getElementById("btnChooseColor");
-  const btnRed = document.getElementById("btnRed");
-  const btnYellow = document.getElementById("btnYellow");
 
-  // --- Create / Join
+  const colorButtonsWinner = document.getElementById("colorButtonsWinner");
+  const btnWinnerRed = document.getElementById("btnWinnerRed");
+  const btnWinnerYellow = document.getElementById("btnWinnerYellow");
+
+  const colorButtonsLoser = document.getElementById("colorButtonsLoser");
+  const btnLoserRed = document.getElementById("btnLoserRed");
+  const btnLoserYellow = document.getElementById("btnLoserYellow");
+
+  const finalSummary = document.getElementById("finalSummary");
+
+  // Create / Join
   document.getElementById("btnCreate").onclick = async () => {
     const newGameRef = push(ref(db, "games"));
     const gid = newGameRef.key;
@@ -221,8 +248,8 @@
       title: "Tirage au sort Americano Manon vs Lisa",
       createdAt: Date.now(),
       round: 1,
-      target: 5,
-      status: "WAITING", // WAITING | PAUSE | FINISHED
+      target: 10,
+      status: "WAITING",
       players: { p1Name: "Lisa", p2Name: "Manon" },
       keys: { admin: adminKey, p1: p1Key, p2: p2Key },
       choices: { p1: null, p2: null },
@@ -230,7 +257,13 @@
       lastResult: null,
       winner: null,
       auto: { enabled: true, batchSize: 3, remaining: 3 },
-      postGame: { stage: "NONE", decisionType: null, color: null }
+      postGame: {
+        stage: "NONE",
+        adminApproved: false,
+        winnerDecisionType: null,   // FIRST_PLAYER | COLOR
+        winnerColor: null,          // ROUGE | JAUNE (si winnerDecisionType=COLOR)
+        loserColor: null            // ROUGE | JAUNE (si winnerDecisionType=FIRST_PLAYER)
+      }
     });
 
     const base = location.origin + location.pathname;
@@ -261,7 +294,6 @@
     location.href = `${base}?game=${encodeURIComponent(gid)}&role=spectator`;
   };
 
-  // --- If opened with game & role
   if (gameIdFromUrl && roleParam) {
     setupCard.style.display = "none";
     gameCard.style.display = "block";
@@ -279,7 +311,6 @@
       canAdmin = (roleParam==="admin" && keyFromUrl && keyFromUrl === keys.admin);
       canP1 = (roleParam==="player1" && keyFromUrl && keyFromUrl === keys.p1);
       canP2 = (roleParam==="player2" && keyFromUrl && keyFromUrl === keys.p2);
-
       const uiRole = (canAdmin ? "admin" : canP1 ? "player1" : canP2 ? "player2" : "spectator");
       rolePill.textContent = roleName(uiRole);
       return uiRole;
@@ -301,7 +332,7 @@
     btnPaper.onclick = () => choose("PAPER", window.__uiRole, window.__state);
     btnScissors.onclick = () => choose("SCISSORS", window.__uiRole, window.__state);
 
-    // ✅ Reprendre : on repart sur un NOUVEAU tour (donc déverrouille Lisa/Manon)
+    // Reprendre (3 manches)
     btnResume.onclick = async () => {
       if (!canAdmin) return;
       const st = window.__state;
@@ -316,10 +347,9 @@
       });
     };
 
-    // ✅ Reset : on remet tout + on vide l'historique (partie en cours uniquement)
+    // Reset (vide historique)
     btnReset.onclick = async () => {
       if (!canAdmin) return;
-
       await update(gameRef, {
         round: 1,
         status: "WAITING",
@@ -328,14 +358,90 @@
         lastResult: null,
         winner: null,
         auto: { enabled: true, batchSize: 3, remaining: 3 },
-        postGame: { stage: "NONE", decisionType: null, color: null }
+        postGame: {
+          stage: "NONE",
+          adminApproved: false,
+          winnerDecisionType: null,
+          winnerColor: null,
+          loserColor: null
+        }
       });
-
-      // vider l'historique
       await set(histRef, null);
     };
 
-    // ✅ Historique (D) - uniquement partie en cours
+    // Admin validate postgame
+    btnAdminValidate.onclick = async () => {
+      if (!canAdmin) return;
+      const st = window.__state;
+      if (!st?.winner) return;
+      await update(gameRef, {
+        postGame: {
+          ...(st.postGame || {}),
+          adminApproved: true,
+          stage: "WINNER_CHOICE"
+        }
+      });
+    };
+
+    // Winner decisions
+    async function setWinnerDecisionType(type){
+      const st = window.__state;
+      if (!st?.winner) return;
+
+      const winnerRole = winnerRoleFromName(st.winner);
+      if (window.__uiRole !== winnerRole) return;
+
+      await update(gameRef, {
+        postGame: {
+          ...(st.postGame || {}),
+          winnerDecisionType: type,
+          stage: (type === "COLOR" ? "WINNER_COLOR_PICK" : "LOSER_COLOR_PICK"),
+          winnerColor: null,
+          loserColor: null
+        }
+      });
+    }
+
+    async function setWinnerColor(color){
+      const st = window.__state;
+      if (!st?.winner) return;
+
+      const winnerRole = winnerRoleFromName(st.winner);
+      if (window.__uiRole !== winnerRole) return;
+
+      await update(gameRef, {
+        postGame: {
+          ...(st.postGame || {}),
+          winnerColor: color,
+          stage: "DONE"
+        }
+      });
+    }
+
+    async function setLoserColor(color){
+      const st = window.__state;
+      if (!st?.winner) return;
+
+      const loserRole = loserRoleFromWinnerName(st.winner);
+      if (window.__uiRole !== loserRole) return;
+
+      await update(gameRef, {
+        postGame: {
+          ...(st.postGame || {}),
+          loserColor: color,
+          stage: "DONE"
+        }
+      });
+    }
+
+    btnChooseFirstPlayer.onclick = () => setWinnerDecisionType("FIRST_PLAYER");
+    btnChooseColor.onclick = () => setWinnerDecisionType("COLOR");
+    btnWinnerRed.onclick = () => setWinnerColor("ROUGE");
+    btnWinnerYellow.onclick = () => setWinnerColor("JAUNE");
+    btnLoserRed.onclick = () => setLoserColor("ROUGE");
+    btnLoserYellow.onclick = () => setLoserColor("JAUNE");
+
+    // Historique
     onValue(query(histRef, limitToLast(50)), (snap) => {
       const obj = snap.val();
       if (!obj) {
@@ -351,37 +457,7 @@
       }).join("")}</ul>`;
     });
 
-    // ✅ PostGame actions (vainqueur)
-    async function setWinnerDecision(decisionType, color=null){
-      const st = window.__state;
-      if (!st || !st.winner) return;
-
-      const winnerRole = winnerRoleFromName(st.winner);
-      if (window.__uiRole !== winnerRole) return; // seul le vainqueur
-
-      if (decisionType === "FIRST_PLAYER") {
-        await update(gameRef, {
-          postGame: { stage: "DONE", decisionType: "FIRST_PLAYER", color: null }
-        });
-      } else if (decisionType === "COLOR") {
-        if (color) {
-          await update(gameRef, {
-            postGame: { stage: "DONE", decisionType: "COLOR", color }
-          });
-        } else {
-          await update(gameRef, {
-            postGame: { stage: "COLOR_CHOICE", decisionType: "COLOR", color: null }
-          });
-        }
-      }
-    }
-
-    btnChooseFirstPlayer.onclick = () => setWinnerDecision("FIRST_PLAYER");
-    btnChooseColor.onclick = () => setWinnerDecision("COLOR");
-    btnRed.onclick = () => setWinnerDecision("COLOR", "ROUGE");
-    btnYellow.onclick = () => setWinnerDecision("COLOR", "JAUNE");
-
-    // Live updates (jeu)
+    // Live updates
     onValue(gameRef, async (snap) => {
       const st = snap.val();
       window.__state = st;
@@ -403,35 +479,30 @@
       const remaining = st.auto?.remaining ?? 0;
       const status = st.status || "WAITING";
       autoPill.textContent =
-        status === "PAUSE"
-          ? `⏸ Pause (admin)`
-          : (st.winner ? `🏁 Terminé` : `⚡ Auto: ${remaining}/3`);
+        status === "PAUSE" ? `⏸ Pause (admin)` :
+        (st.winner ? `🏁 Terminé` : `⚡ Auto: ${remaining}/3`);
 
       const p1 = st.choices?.p1;
       const p2 = st.choices?.p2;
 
-      // ✅ Lisa voit si Manon a joué (et inversement)
+      // Lisa/Manon voient si l'autre a joué
       const otherPlayedForP1 = p2 ? "✅ Manon a joué" : "… Manon n'a pas encore joué";
       const otherPlayedForP2 = p1 ? "✅ Lisa a joué" : "… Lisa n'a pas encore joué";
 
-      // Désactiver choix si déjà joué / pause / fin
       const myChoice = (window.__uiRole==="player1") ? p1 : (window.__uiRole==="player2") ? p2 : null;
       const disableChoices =
         !(window.__uiRole==="player1" || window.__uiRole==="player2") ||
-        !!myChoice ||
-        st.winner ||
-        status === "PAUSE";
+        !!myChoice || st.winner || status === "PAUSE";
 
       [btnRock, btnPaper, btnScissors].forEach(b => b.disabled = disableChoices);
 
       const bothPlayed = !!p1 && !!p2;
       const finished = !!st.winner;
 
-      // Boutons admin
       btnReset.style.display = canAdmin ? "inline-block" : "none";
       btnResume.style.display = (canAdmin && status === "PAUSE" && !finished) ? "inline-block" : "none";
 
-      // Auto-resolve once
+      // Resolve once
       if (bothPlayed && !st.lastResult && !finished) {
         const res = outcome(p1, p2);
         let ns1 = s1, ns2 = s2;
@@ -439,8 +510,8 @@
         if (res === "P2") ns2++;
 
         let winner = null;
-        if (ns1 >= (st.target || 5)) winner = "Lisa";
-        if (ns2 >= (st.target || 5)) winner = "Manon";
+        if (ns1 >= (st.target || 10)) winner = "Lisa";
+        if (ns2 >= (st.target || 10)) winner = "Manon";
 
         const lr = {
           at: Date.now(),
@@ -452,9 +523,21 @@
         const curRemaining = (st.auto?.remaining ?? 1);
         const nextRemaining = Math.max(0, curRemaining - 1);
 
-        const nextStatus = winner
-          ? "FINISHED"
-          : (nextRemaining > 0 ? "WAITING" : "PAUSE");
+        const nextStatus = winner ? "FINISHED" : (nextRemaining > 0 ? "WAITING" : "PAUSE");
+
+        const nextPostGame = winner ? {
+          stage: "ADMIN_WAIT",
+          adminApproved: false,
+          winnerDecisionType: null,
+          winnerColor: null,
+          loserColor: null
+        } : (st.postGame || {
+          stage: "NONE",
+          adminApproved: false,
+          winnerDecisionType: null,
+          winnerColor: null,
+          loserColor: null
+        });
 
         await update(gameRef, {
           lastResult: lr,
@@ -462,14 +545,14 @@
           status: nextStatus,
           winner: winner,
           auto: { enabled: true, batchSize: 3, remaining: winner ? 0 : nextRemaining },
-          postGame: winner ? { stage: "WINNER_CHOICE", decisionType: null, color: null } : (st.postGame || { stage: "NONE", decisionType: null, color: null })
+          postGame: nextPostGame
         });
 
-        // ✅ Historique UNE SEULE FOIS PAR TOUR
+        // Historique 1 fois / tour
         const histOnceRef = ref(db, `games/${gameIdFromUrl}/history/${st.round}`);
         await set(histOnceRef, lr);
 
-        // ✅ Auto-advance (dans le batch)
+        // Auto-advance
         if (!winner && nextRemaining > 0) {
           setTimeout(async () => {
             await update(gameRef, {
@@ -482,21 +565,18 @@
         return;
       }
 
-      // UI states
+      // Status text
       if (finished) {
         statusLine.textContent = `🏆 ${st.winner} a gagné !`;
         subStatus.textContent = "Fin de partie.";
-
       } else if (status === "PAUSE") {
         statusLine.textContent = `⏸ Pause après 3 manches`;
         subStatus.textContent = canAdmin
           ? "Admin : clique sur “Reprendre (3 manches)” pour relancer."
           : "En attente que l’admin relance…";
-
       } else if (bothPlayed && st.lastResult) {
         statusLine.textContent = `Résultat du tour ${st.round}`;
         subStatus.textContent = st.lastResult.text;
-
       } else {
         statusLine.textContent = `Tour ${st.round} en cours…`;
         if (window.__uiRole==="player1") {
@@ -512,7 +592,98 @@
         }
       }
 
-      // Révélation
+      // Winner choice card always visible once finished
+      const pg = st.postGame || { stage:"NONE" };
+      if (st.winner) {
+        winnerChoiceCard.style.display = "block";
+
+        const loserName = loserNameFromWinnerName(st.winner);
+        winnerChoiceInfo.innerHTML =
+          `<b>${st.winner}</b> a gagné, et a le choix entre : ` +
+          `choisir en premier le <b>premier joueur</b> de son équipe, ` +
+          `ou choisir la <b>couleur</b> de son équipe (<b>rouge/jaune</b>).`;
+
+        const winnerRole = winnerRoleFromName(st.winner);
+        const loserRole = loserRoleFromWinnerName(st.winner);
+        const isWinner = (window.__uiRole === winnerRole);
+        const isLoser = (window.__uiRole === loserRole);
+
+        // default: greyed buttons
+        btnChooseFirstPlayer.disabled = true;
+        btnChooseColor.disabled = true;
+        btnWinnerRed.disabled = true;
+        btnWinnerYellow.disabled = true;
+        btnLoserRed.disabled = true;
+        btnLoserYellow.disabled = true;
+
+        winnerChoiceButtons.style.display = "flex";
+        colorButtonsWinner.style.display = "flex";
+        colorButtonsLoser.style.display = "flex";
+
+        // show/hide admin validate
+        btnAdminValidate.style.display = (canAdmin && pg.stage === "ADMIN_WAIT") ? "inline-block" : "none";
+
+        // Enable after admin validation
+        if (pg.stage === "WINNER_CHOICE") {
+          if (isWinner) {
+            btnChooseFirstPlayer.disabled = false;
+            btnChooseColor.disabled = false;
+          }
+        }
+
+        if (pg.stage === "WINNER_COLOR_PICK") {
+          if (isWinner) {
+            btnWinnerRed.disabled = false;
+            btnWinnerYellow.disabled = false;
+          }
+        }
+
+        if (pg.stage === "LOSER_COLOR_PICK") {
+          if (isLoser) {
+            btnLoserRed.disabled = false;
+            btnLoserYellow.disabled = false;
+          }
+        }
+
+        // Final summary
+        const hasDone = (pg.stage === "DONE");
+        finalSummary.style.display = hasDone ? "block" : "none";
+        if (hasDone) {
+          let summary = `<b>${st.winner}</b> a gagné. `;
+          if (pg.winnerDecisionType === "COLOR") {
+            summary += `${st.winner} a choisi la couleur <b>${pg.winnerColor}</b>. `;
+          } else if (pg.winnerDecisionType === "FIRST_PLAYER") {
+            summary += `${st.winner} a choisi le <b>premier joueur</b>. `;
+            summary += `<b>${loserName}</b> a choisi la couleur <b>${pg.loserColor}</b>. `;
+          } else {
+            summary += `Choix enregistrés. `;
+          }
+
+          // Teams colors
+          let lisaColor = "—";
+          let manonColor = "—";
+
+          if (pg.winnerDecisionType === "COLOR") {
+            // winner picked color; loser gets the other color
+            const other = (pg.winnerColor === "ROUGE") ? "JAUNE" : "ROUGE";
+            if (st.winner === "Lisa") { lisaColor = pg.winnerColor; manonColor = other; }
+            else { manonColor = pg.winnerColor; lisaColor = other; }
+          } else if (pg.winnerDecisionType === "FIRST_PLAYER") {
+            // loser picked color; winner gets the other
+            const other = (pg.loserColor === "ROUGE") ? "JAUNE" : "ROUGE";
+            if (st.winner === "Lisa") { lisaColor = other; manonColor = pg.loserColor; }
+            else { manonColor = other; lisaColor = pg.loserColor; }
+          }
+
+          summary += `<br><br><b>Couleurs finales</b> : Team Lisa = <b>${lisaColor}</b> | Team Manon = <b>${manonColor}</b>`;
+          finalSummary.innerHTML = summary;
+        }
+
+      } else {
+        winnerChoiceCard.style.display = "none";
+      }
+
+      // Last result
       if (st.lastResult) {
         const lr = st.lastResult;
         resultBox.innerHTML = `
@@ -525,48 +696,6 @@
         `;
       } else {
         resultBox.innerHTML = "";
-      }
-
-      // ✅ Affichage post-game (vainqueur + suivi perdant/spectateurs en temps réel)
-      const pg = st.postGame || { stage:"NONE", decisionType:null, color:null };
-      if (st.winner) {
-        winnerChoiceCard.style.display = "block";
-
-        const winnerRole = winnerRoleFromName(st.winner);
-        const isWinner = (window.__uiRole === winnerRole);
-
-        if (pg.stage === "WINNER_CHOICE") {
-          winnerChoiceInfo.textContent = isWinner
-            ? "Tu as gagné : choisis ce que tu veux décider."
-            : `${st.winner} doit choisir : “premier joueur” ou “couleur”.`;
-          winnerChoiceButtons.style.display = isWinner ? "flex" : "none";
-          colorButtons.style.display = "none";
-
-        } else if (pg.stage === "COLOR_CHOICE") {
-          winnerChoiceInfo.textContent = isWinner
-            ? "Tu as choisi : couleur. Choisis Rouge ou Jaune."
-            : `${st.winner} doit choisir la couleur (Rouge/Jaune).`;
-          winnerChoiceButtons.style.display = "none";
-          colorButtons.style.display = isWinner ? "flex" : "none";
-
-        } else if (pg.stage === "DONE") {
-          if (pg.decisionType === "FIRST_PLAYER") {
-            winnerChoiceInfo.textContent = `Décision finale : ✅ ${st.winner} a choisi “Choix du premier joueur”.`;
-          } else if (pg.decisionType === "COLOR") {
-            winnerChoiceInfo.textContent = `Décision finale : ✅ ${st.winner} a choisi la couleur : ${pg.color}.`;
-          } else {
-            winnerChoiceInfo.textContent = `Décision finale enregistrée.`;
-          }
-          winnerChoiceButtons.style.display = "none";
-          colorButtons.style.display = "none";
-        } else {
-          // fallback
-          winnerChoiceInfo.textContent = "Décision en attente…";
-          winnerChoiceButtons.style.display = "none";
-          colorButtons.style.display = "none";
-        }
-      } else {
-        winnerChoiceCard.style.display = "none";
       }
     });
   }
