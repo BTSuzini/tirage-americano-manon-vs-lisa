@@ -92,8 +92,13 @@
       <div class="panelTitle">🏁 Choix du vainqueur</div>
       <div class="muted" id="winnerChoiceInfo"></div>
 
+      <!-- ✅ visible par tous -->
+      <div class="row" style="margin-top:10px; align-items:center;">
+        <span class="pill" id="adminStatusPill">—</span>
+      </div>
+
       <div class="row" style="margin-top:10px;">
-        <button id="btnAdminValidate" class="primary" style="display:none;">✅ Admin : valider les choix</button>
+        <button id="btnAdminValidate" class="primary" style="display:none;">✅ Admin : valider le résultat</button>
       </div>
 
       <div class="row" id="winnerChoiceButtons" style="margin-top:10px; display:none;">
@@ -111,6 +116,7 @@
         <button id="btnLoserYellow">Jaune</button>
       </div>
 
+      <div class="muted" id="nextActorLine" style="margin-top:10px;"></div>
       <div class="muted" id="finalSummary" style="margin-top:10px; display:none;"></div>
     </div>
 
@@ -220,6 +226,8 @@
   const winnerChoiceCard = document.getElementById("winnerChoiceCard");
   const winnerChoiceInfo = document.getElementById("winnerChoiceInfo");
   const btnAdminValidate = document.getElementById("btnAdminValidate");
+  const adminStatusPill = document.getElementById("adminStatusPill");
+  const nextActorLine = document.getElementById("nextActorLine");
 
   const winnerChoiceButtons = document.getElementById("winnerChoiceButtons");
   const btnChooseFirstPlayer = document.getElementById("btnChooseFirstPlayer");
@@ -369,7 +377,7 @@
       await set(histRef, null);
     };
 
-    // Admin validate postgame
+    // Admin validate postgame (visible pour tous via DB)
     btnAdminValidate.onclick = async () => {
       if (!canAdmin) return;
       const st = window.__state;
@@ -592,23 +600,31 @@
         }
       }
 
-      // Winner choice card always visible once finished
-      const pg = st.postGame || { stage:"NONE" };
+      // ✅ Winner panel: visibilité validation admin + qui doit choisir + affichage immédiat des choix
+      const pg = st.postGame || { stage:"NONE", adminApproved:false, winnerDecisionType:null, winnerColor:null, loserColor:null };
+
       if (st.winner) {
         winnerChoiceCard.style.display = "block";
 
         const loserName = loserNameFromWinnerName(st.winner);
+        const winnerRole = winnerRoleFromName(st.winner);
+        const loserRole = loserRoleFromWinnerName(st.winner);
+
+        const isWinner = (window.__uiRole === winnerRole);
+        const isLoser = (window.__uiRole === loserRole);
+
+        // Texte explicatif toujours visible
         winnerChoiceInfo.innerHTML =
           `<b>${st.winner}</b> a gagné, et a le choix entre : ` +
           `choisir en premier le <b>premier joueur</b> de son équipe, ` +
           `ou choisir la <b>couleur</b> de son équipe (<b>rouge/jaune</b>).`;
 
-        const winnerRole = winnerRoleFromName(st.winner);
-        const loserRole = loserRoleFromWinnerName(st.winner);
-        const isWinner = (window.__uiRole === winnerRole);
-        const isLoser = (window.__uiRole === loserRole);
+        // Toujours afficher les sections (grises si pas le bon moment)
+        winnerChoiceButtons.style.display = "flex";
+        colorButtonsWinner.style.display = "flex";
+        colorButtonsLoser.style.display = "flex";
 
-        // default: greyed buttons
+        // Boutons grisés par défaut
         btnChooseFirstPlayer.disabled = true;
         btnChooseColor.disabled = true;
         btnWinnerRed.disabled = true;
@@ -616,38 +632,66 @@
         btnLoserRed.disabled = true;
         btnLoserYellow.disabled = true;
 
-        winnerChoiceButtons.style.display = "flex";
-        colorButtonsWinner.style.display = "flex";
-        colorButtonsLoser.style.display = "flex";
+        const adminApproved = !!pg.adminApproved;
 
-        // show/hide admin validate
+        // Admin status visible pour tous
+        if (!adminApproved) {
+          adminStatusPill.textContent = "⏳ En attente de validation admin";
+        } else {
+          adminStatusPill.textContent = "✅ Résultat validé par l’admin";
+        }
+
+        // Bouton de validation admin affiché uniquement pour admin, au bon moment
         btnAdminValidate.style.display = (canAdmin && pg.stage === "ADMIN_WAIT") ? "inline-block" : "none";
 
-        // Enable after admin validation
-        if (pg.stage === "WINNER_CHOICE") {
-          if (isWinner) {
-            btnChooseFirstPlayer.disabled = false;
-            btnChooseColor.disabled = false;
-          }
-        }
+        // Qui doit faire la prochaine action ?
+        let nextActor = null;
 
-        if (pg.stage === "WINNER_COLOR_PICK") {
-          if (isWinner) {
-            btnWinnerRed.disabled = false;
-            btnWinnerYellow.disabled = false;
+        if (!adminApproved) {
+          nextActor = "Admin";
+          nextActorLine.innerHTML = `🏆 <b>${st.winner}</b> a gagné, et pourra faire son choix dès validation du résultat par l’admin.`;
+        } else {
+          if (pg.stage === "WINNER_CHOICE") {
+            nextActor = st.winner;
+            if (isWinner) {
+              btnChooseFirstPlayer.disabled = false;
+              btnChooseColor.disabled = false;
+            }
+          } else if (pg.stage === "WINNER_COLOR_PICK") {
+            nextActor = `${st.winner} (choix couleur)`;
+            if (isWinner) {
+              btnWinnerRed.disabled = false;
+              btnWinnerYellow.disabled = false;
+            }
+          } else if (pg.stage === "LOSER_COLOR_PICK") {
+            nextActor = `${loserName} (choix couleur)`;
+            if (isLoser) {
+              btnLoserRed.disabled = false;
+              btnLoserYellow.disabled = false;
+            }
+          } else if (pg.stage === "DONE") {
+            nextActor = null;
           }
-        }
 
-        if (pg.stage === "LOSER_COLOR_PICK") {
-          if (isLoser) {
-            btnLoserRed.disabled = false;
-            btnLoserYellow.disabled = false;
+          if (pg.stage !== "DONE") {
+            // Afficher aussi ce qui a déjà été choisi
+            let progress = [];
+            if (pg.winnerDecisionType) {
+              progress.push(`Choix du gagnant : <b>${pg.winnerDecisionType === "COLOR" ? "Couleur" : "Premier joueur"}</b>`);
+            }
+            if (pg.winnerColor) progress.push(`Couleur choisie par ${st.winner} : <b>${pg.winnerColor}</b>`);
+            if (pg.loserColor) progress.push(`Couleur choisie par ${loserName} : <b>${pg.loserColor}</b>`);
+
+            nextActorLine.innerHTML =
+              (progress.length ? `${progress.join(" • ")}<br>` : "") +
+              `👉 Prochaine action : <b>${nextActor || "—"}</b>`;
           }
         }
 
         // Final summary
         const hasDone = (pg.stage === "DONE");
         finalSummary.style.display = hasDone ? "block" : "none";
+
         if (hasDone) {
           let summary = `<b>${st.winner}</b> a gagné. `;
           if (pg.winnerDecisionType === "COLOR") {
@@ -655,8 +699,6 @@
           } else if (pg.winnerDecisionType === "FIRST_PLAYER") {
             summary += `${st.winner} a choisi le <b>premier joueur</b>. `;
             summary += `<b>${loserName}</b> a choisi la couleur <b>${pg.loserColor}</b>. `;
-          } else {
-            summary += `Choix enregistrés. `;
           }
 
           // Teams colors
@@ -664,12 +706,10 @@
           let manonColor = "—";
 
           if (pg.winnerDecisionType === "COLOR") {
-            // winner picked color; loser gets the other color
             const other = (pg.winnerColor === "ROUGE") ? "JAUNE" : "ROUGE";
             if (st.winner === "Lisa") { lisaColor = pg.winnerColor; manonColor = other; }
             else { manonColor = pg.winnerColor; lisaColor = other; }
           } else if (pg.winnerDecisionType === "FIRST_PLAYER") {
-            // loser picked color; winner gets the other
             const other = (pg.loserColor === "ROUGE") ? "JAUNE" : "ROUGE";
             if (st.winner === "Lisa") { lisaColor = other; manonColor = pg.loserColor; }
             else { manonColor = other; lisaColor = pg.loserColor; }
@@ -677,6 +717,8 @@
 
           summary += `<br><br><b>Couleurs finales</b> : Team Lisa = <b>${lisaColor}</b> | Team Manon = <b>${manonColor}</b>`;
           finalSummary.innerHTML = summary;
+
+          nextActorLine.innerHTML = `✅ Tous les choix ont été faits.`;
         }
 
       } else {
