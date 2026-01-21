@@ -62,6 +62,7 @@
       <div class="row">
         <span class="pill" id="rolePill">—</span>
         <span class="pill">Game ID: <code id="gameIdLabel"></code></span>
+        <span class="pill" id="autoPill">—</span>
       </div>
       <div class="score" id="scoreLine">—</div>
     </div>
@@ -83,7 +84,7 @@
     <div id="resultBox" style="margin-top:14px;"></div>
 
     <div class="row" style="margin-top:12px;">
-      <button id="btnNext" style="display:none;">Tour suivant</button>
+      <button id="btnResume" style="display:none;">▶️ Reprendre (3 manches)</button>
       <button id="btnReset" style="display:none;">Revanche (reset)</button>
     </div>
 
@@ -103,7 +104,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
   import { getDatabase, ref, set, update, onValue, push, limitToLast, query } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
 
-  // ✅ Ton Firebase config
+  // ✅ Firebase config
   const firebaseConfig = {
     apiKey: "AIzaSyCcTl2H__r_8oRZ7VF4iDHtF2jO0idKW0k",
     authDomain: "tirage-americano-manon-vs-lisa.firebaseapp.com",
@@ -158,13 +159,15 @@
   const gameIdInput = document.getElementById("gameIdInput");
 
   const rolePill = document.getElementById("rolePill");
+  const autoPill = document.getElementById("autoPill");
   const gameIdLabel = document.getElementById("gameIdLabel");
   const statusLine = document.getElementById("statusLine");
   const subStatus = document.getElementById("subStatus");
   const scoreLine = document.getElementById("scoreLine");
   const controls = document.getElementById("controls");
   const resultBox = document.getElementById("resultBox");
-  const btnNext = document.getElementById("btnNext");
+
+  const btnResume = document.getElementById("btnResume");
   const btnReset = document.getElementById("btnReset");
 
   const btnRock = document.getElementById("btnRock");
@@ -188,13 +191,14 @@
       createdAt: Date.now(),
       round: 1,
       target: 5,
-      status: "WAITING",
+      status: "WAITING", // WAITING | PAUSE | FINISHED
       players: { p1Name: "Lisa", p2Name: "Manon" },
       keys: { admin: adminKey, p1: p1Key, p2: p2Key },
       choices: { p1: null, p2: null },
       scores: { p1: 0, p2: 0 },
       lastResult: null,
-      winner: null
+      winner: null,
+      auto: { enabled: true, batchSize: 3, remaining: 3 }
     });
 
     const base = location.origin + location.pathname;
@@ -243,7 +247,7 @@
       canAdmin = (roleParam==="admin" && keyFromUrl && keyFromUrl === keys.admin);
       canP1 = (roleParam==="player1" && keyFromUrl && keyFromUrl === keys.p1);
       canP2 = (roleParam==="player2" && keyFromUrl && keyFromUrl === keys.p2);
-      // Si mauvais lien (clé incorrecte), on force spectateur côté UI
+
       const uiRole = (canAdmin ? "admin" : canP1 ? "player1" : canP2 ? "player2" : "spectator");
       rolePill.textContent = roleName(uiRole);
       return uiRole;
@@ -252,28 +256,27 @@
     function setControlsVisible(uiRole){
       const canPlay = (uiRole==="player1" || uiRole==="player2");
       controls.style.display = canPlay ? "block" : "none";
-      btnNext.style.display = "none";
-      btnReset.style.display = "none";
     }
 
-    async function choose(choice, uiRole) {
+    async function choose(choice, uiRole, st) {
       if (uiRole !== "player1" && uiRole !== "player2") return;
+
+      // si pause => pas de jeu
+      if (st?.status === "PAUSE" || st?.winner) return;
+
       const path = uiRole === "player1" ? "choices/p1" : "choices/p2";
-      await update(gameRef, { [path]: choice, status: "WAITING" });
+      await update(gameRef, { [path]: choice });
     }
 
-    btnRock.onclick = () => choose("ROCK", window.__uiRole);
-    btnPaper.onclick = () => choose("PAPER", window.__uiRole);
-    btnScissors.onclick = () => choose("SCISSORS", window.__uiRole);
+    btnRock.onclick = () => choose("ROCK", window.__uiRole, window.__state);
+    btnPaper.onclick = () => choose("PAPER", window.__uiRole, window.__state);
+    btnScissors.onclick = () => choose("SCISSORS", window.__uiRole, window.__state);
 
-    // Admin only
-    btnNext.onclick = async () => {
+    btnResume.onclick = async () => {
       if (!canAdmin) return;
       await update(gameRef, {
-        round: (window.__state?.round || 1) + 1,
-        status: "WAITING",
-        choices: { p1: null, p2: null },
-        lastResult: null
+        auto: { enabled: true, batchSize: 3, remaining: 3 },
+        status: "WAITING"
       });
     };
 
@@ -285,20 +288,20 @@
         choices: { p1: null, p2: null },
         scores: { p1: 0, p2: 0 },
         lastResult: null,
-        winner: null
+        winner: null,
+        auto: { enabled: true, batchSize: 3, remaining: 3 }
       });
-      // pas besoin de supprimer l'historique pour ce tirage (on le garde)
+      // Historique conservé volontairement
     };
 
-    // Historique (D)
-    onValue(query(histRef, limitToLast(10)), (snap) => {
+    // Historique (D) - 1 entrée par tour (clés = numéro de tour)
+    onValue(query(histRef, limitToLast(20)), (snap) => {
       const obj = snap.val();
       if (!obj) {
         historyCard.style.display = "none";
         historyList.innerHTML = "";
         return;
       }
-      // on veut les plus récents en haut
       const items = Object.values(obj).sort((a,b)=>(b.at||0)-(a.at||0));
       historyCard.style.display = "block";
       historyList.innerHTML = `<ul>${items.map(it => {
@@ -326,8 +329,21 @@
       const s2 = st.scores?.p2 ?? 0;
       scoreLine.textContent = `Score — Lisa: ${s1} | Manon: ${s2}`;
 
+      const remaining = st.auto?.remaining ?? 0;
+      const status = st.status || "WAITING";
+      autoPill.textContent =
+        status === "PAUSE"
+          ? `⏸ Pause (admin)`
+          : `⚡ Auto: ${remaining}/3`;
+
+      // Désactiver boutons si déjà joué, fin, ou pause
       const myChoice = (window.__uiRole==="player1") ? st.choices?.p1 : (window.__uiRole==="player2") ? st.choices?.p2 : null;
-      const disableChoices = !(window.__uiRole==="player1" || window.__uiRole==="player2") || !!myChoice || st.winner;
+      const disableChoices =
+        !(window.__uiRole==="player1" || window.__uiRole==="player2") ||
+        !!myChoice ||
+        st.winner ||
+        status === "PAUSE";
+
       [btnRock, btnPaper, btnScissors].forEach(b => b.disabled = disableChoices);
 
       const p1 = st.choices?.p1;
@@ -335,7 +351,11 @@
       const bothPlayed = !!p1 && !!p2;
       const finished = !!st.winner;
 
-      // Auto resolve once
+      // Boutons admin
+      btnReset.style.display = canAdmin ? "inline-block" : "none";
+      btnResume.style.display = (canAdmin && status === "PAUSE" && !finished) ? "inline-block" : "none";
+
+      // Auto-resolve once
       if (bothPlayed && !st.lastResult && !finished) {
         const res = outcome(p1, p2);
         let ns1 = s1, ns2 = s2;
@@ -353,30 +373,55 @@
           text: res==="DRAW" ? "Égalité" : (res==="P1" ? "Lisa gagne la manche" : "Manon gagne la manche")
         };
 
-        // écrit résultat + score
+        // bloc auto 3 manches puis pause
+        const curRemaining = (st.auto?.remaining ?? 1);
+        const nextRemaining = Math.max(0, curRemaining - 1);
+
+        const nextStatus = winner
+          ? "FINISHED"
+          : (nextRemaining > 0 ? "WAITING" : "PAUSE");
+
         await update(gameRef, {
           lastResult: lr,
           scores: { p1: ns1, p2: ns2 },
-          status: winner ? "FINISHED" : "REVEAL",
-          winner: winner
+          status: nextStatus,
+          winner: winner,
+          auto: {
+            enabled: true,
+            batchSize: 3,
+            remaining: winner ? 0 : nextRemaining
+          }
         });
 
-        // push historique (D)
-        await set(push(histRef), lr);
+        // ✅ Historique UNE SEULE FOIS PAR TOUR
+        const histOnceRef = ref(db, `games/${gameIdFromUrl}/history/${st.round}`);
+        await set(histOnceRef, lr);
+
+        // ✅ Auto-advance si encore dans le batch
+        if (!winner && nextRemaining > 0) {
+          setTimeout(async () => {
+            await update(gameRef, {
+              round: st.round + 1,
+              choices: { p1: null, p2: null },
+              lastResult: null
+            });
+          }, 900);
+        }
         return;
       }
 
-      // UI states + Admin buttons
+      // UI states
       if (finished) {
         statusLine.textContent = `🏆 ${st.winner} a gagné !`;
         subStatus.textContent = "Fin de partie.";
-        btnReset.style.display = canAdmin ? "inline-block" : "none";
-        btnNext.style.display = "none";
+      } else if (status === "PAUSE") {
+        statusLine.textContent = `⏸ Pause après 3 manches`;
+        subStatus.textContent = canAdmin
+          ? "Admin : clique sur “Reprendre (3 manches)” pour relancer."
+          : "En attente que l’admin relance…";
       } else if (bothPlayed && st.lastResult) {
         statusLine.textContent = `Résultat du tour ${st.round}`;
         subStatus.textContent = st.lastResult.text;
-        btnNext.style.display = canAdmin ? "inline-block" : "none";
-        btnReset.style.display = "none";
       } else {
         statusLine.textContent = `Tour ${st.round} en cours…`;
         if (window.__uiRole==="player1" || window.__uiRole==="player2") {
@@ -385,10 +430,9 @@
         } else {
           subStatus.textContent = `En attente des joueurs… (${p1 ? "Lisa ✅" : "Lisa …"} / ${p2 ? "Manon ✅" : "Manon …"})`;
         }
-        btnNext.style.display = "none";
-        btnReset.style.display = "none";
       }
 
+      // Révélation
       if (st.lastResult) {
         const lr = st.lastResult;
         resultBox.innerHTML = `
