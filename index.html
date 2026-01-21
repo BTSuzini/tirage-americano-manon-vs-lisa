@@ -1,0 +1,61 @@
+<details>
+<summary>📄 Code à coller (clique pour ouvrir)</summary>
+
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Tirage au sort Americano Manon vs Lisa</title>
+
+  <!-- Firebase (modules) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
+    import { getDatabase, ref, set, update, onValue, push } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCcTl2H__r_8oRZ7VF4iDHtF2jO0idKW0k",
+      authDomain: "tirage-americano-manon-vs-lisa.firebaseapp.com",
+      databaseURL: "https://tirage-americano-manon-vs-lisa-default-rtdb.firebaseio.com",
+      projectId: "tirage-americano-manon-vs-lisa",
+      storageBucket: "tirage-americano-manon-vs-lisa.appspot.com",
+      messagingSenderId: "468030106920",
+      appId: "1:468030106920:web:606f8fb66275c90936b41d"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    window.db = db;
+    window.firebaseHelpers = { ref, set, update, onValue, push };
+  </script>
+
+  <style>
+    body { font-family: system-ui, -apple-system, Arial, sans-serif; background:#fafafa; margin:0; padding:20px; }
+    .wrap { max-width: 700px; margin:auto; }
+    h1 { margin-bottom: 6px; }
+    .card { background:#fff; border-radius:12px; padding:16px; margin:14px 0; box-shadow:0 2px 6px rgba(0,0,0,.08); }
+    button { padding:12px 16px; border-radius:10px; border:1px solid #ccc; background:#fff; cursor:pointer; }
+    button.primary { border-color:#000; font-weight:600; }
+    button:disabled { opacity:.5; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; }
+    .muted { color:#666; }
+    .big { font-size:20px; font-weight:700; }
+  </style>
+</head>
+
+<body>
+<div class="wrap">
+  <h1>🎲 Tirage au sort Americano<br>Manon vs Lisa</h1>
+  <div class="muted">Pierre ✊ • Feuille ✋ • Ciseaux ✌️</div>
+
+  <div class="card">
+    <div class="big">Le jeu est prêt</div>
+    <p class="muted">
+      Cette page est bien chargée depuis GitHub Pages.<br>
+      Prochaine étape : activer l’URL publique.
+    </p>
+  </div>
+</div>
+</body>
+</html>
